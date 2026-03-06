@@ -1,0 +1,4 @@
+module SMCParamStruct {
+    header "SMCParamStruct.h"
+    export *
+}

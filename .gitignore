@@ -1,0 +1,29 @@
+# Build artifacts
+build/
+bin/
+derivedData/
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Swift/Xcode
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+
+# Temporary files
+*.swp
+*~
+test_*.swift
+check_*.swift
