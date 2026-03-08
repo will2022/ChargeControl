@@ -85,9 +85,17 @@ class PowerMonitor {
         logTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
             self?.performLogging()
         }
+        logTimer?.tolerance = 30.0  // Allow macOS to coalesce timer wakes for deep sleep
     }
     
     private func performLogging() {
+        // Skip logging when on battery with no active overrides — let the Mac sleep
+        let adapterWatts = SMCComm.readFloat("PDTR") ?? 0
+        let hasActiveOverride = chargingToFull || chargingDisabledManual || adapterDisabledManual
+        if adapterWatts <= 0 && !hasActiveOverride {
+            return
+        }
+        
         let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
         let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as Array
         

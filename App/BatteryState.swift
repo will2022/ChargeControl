@@ -90,6 +90,7 @@ class BatteryState: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.update()
         }
+        refreshTimer?.tolerance = 1.0  // Allow macOS to coalesce timer for power efficiency
     }
     
     func startMonitoring() {
