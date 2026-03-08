@@ -334,6 +334,7 @@ class PowerMonitor {
                     monitorLogger.debug("Capacity: \(cap)%, Charging: \(isCharging)")
                     
                     // Enforce Start/Max Limits
+                    let wasChargingEnabled = isChargingEnabledState
                     if cap >= maxLimit {
                         isChargingEnabledState = false
                     } else if cap < startLimit {
@@ -364,6 +365,13 @@ class PowerMonitor {
                         _ = SMCComm.writeKey("CHTE", value: [0x00, 0x00, 0x00, 0x00])
                         _ = SMCComm.writeKey("CHIE", value: [0x00])
                         _ = SMCComm.writeKey("CH0J", value: [0x00])
+                        
+                        // Cycle adapter on transition from inhibited → allowed
+                        // macOS won't re-engage charging without a physical adapter power cycle
+                        if !wasChargingEnabled {
+                            monitorLogger.info("State transition: inhibit → allow. Cycling adapter.")
+                            SMCComm.cycleAdapter()
+                        }
                         
                         updateMagSafeLED(chargingDisabled: false, isManualDischarge: false)
                         updateSleepAssertion(isCharging: true, isDischarging: false)
