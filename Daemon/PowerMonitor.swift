@@ -24,6 +24,7 @@ class PowerMonitor {
     
     private var runLoopSource: Unmanaged<CFRunLoopSource>?
     private var logTimer: Timer?
+    private var watchdogTimer: Timer?
     private var maxLimit: Int
     private var startLimit: Int
     private var audioWarningEnabled: Bool
@@ -43,7 +44,7 @@ class PowerMonitor {
     var powerUserModeEnabled: Bool
     
     private var currentSleepDisabled: Bool = false
-    private var isChargingEnabledState: Bool = false
+    var isChargingEnabledState: Bool = false
     var isHeatProtectionTriggered: Bool = false
 
     private init() {
@@ -86,6 +87,14 @@ class PowerMonitor {
             self?.performLogging()
         }
         logTimer?.tolerance = 30.0  // Allow macOS to coalesce timer wakes for deep sleep
+
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 300.0, repeats: true) { [weak self] _ in
+            self?.checkBatteryState()
+        }
+        watchdogTimer?.tolerance = 60.0
+        
+        // Start listening to system sleep/wake events
+        SleepWakeHandler.shared.start()
     }
     
     private func performLogging() {
@@ -131,6 +140,8 @@ class PowerMonitor {
     func stopMonitoring() {
         logTimer?.invalidate()
         logTimer = nil
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
         if let rls = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), rls.takeUnretainedValue(), .defaultMode)
             runLoopSource = nil
@@ -342,7 +353,13 @@ class PowerMonitor {
                     }
 
                     if !isChargingEnabledState {
-                        monitorLogger.info("Inhibiting charge.")
+                        // Check if macOS overrode our setting
+                        if let currentCH0C = SMCComm.readKey("CH0C"), currentCH0C.first == 0x00 {
+                            monitorLogger.warning("macOS override detected! CH0C was 00 (enabled), forcing back to 01 (inhibited).")
+                        } else {
+                            monitorLogger.info("Inhibiting charge.")
+                        }
+
                         _ = SMCComm.writeKey("CH0C", value: [0x01])
                         _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
                         

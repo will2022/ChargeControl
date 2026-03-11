@@ -50,7 +50,12 @@ public struct SMCComm {
         } else {
             let smcResult = output.result
             if smcResult != UInt8(kSMCSuccess) {
-                smcLogger.error("SMC function returned error result: \(smcResult)")
+                if smcResult == 132 {
+                    // 132 is kSMCKeyNotFound, expected for unsupported sensors
+                    smcLogger.debug("SMC function returned key not found (132)")
+                } else {
+                    smcLogger.error("SMC function returned error result: \(smcResult)")
+                }
             }
         }
         return result
@@ -102,7 +107,11 @@ public struct SMCComm {
         
         var result = callSMCFunctionYPC(input: &input, output: &output)
         guard result == kIOReturnSuccess && output.result == UInt8(kSMCSuccess) else {
-            smcLogger.error("SMC: Failed to get info for key \(key)")
+            if output.result == 132 {
+                smcLogger.debug("SMC: Key not found \(key)")
+            } else {
+                smcLogger.error("SMC: Failed to get info for key \(key)")
+            }
             return nil
         }
         

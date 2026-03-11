@@ -57,29 +57,38 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
         }
         
         // 2. Power Telemetry (Validated Decodings)
+        var ampValue: Int?
         if let amp = SMCComm.readInt16BE("B0AC") {
-            state["amperage"] = Int(amp)
+            ampValue = Int(amp)
+            state["amperage"] = ampValue
         }
         
         if let volt = SMCComm.readUInt16LE("B0AV") {
             state["voltage"] = Double(volt) / 1000.0
         }
 
-        if let adapterWatts = SMCComm.readFloat("PDTR") {
-            state["adapterWatts"] = Int(adapterWatts)
+        var adapterWatts: Double?
+        if let aw = SMCComm.readFloat("PDTR") {
+            adapterWatts = Double(aw)
+            state["adapterWatts"] = Int(aw)
         }
 
         if let systemWatts = SMCComm.readFloat("PSTR") {
             state["systemPowerWatts"] = Double(systemWatts)
-        }
-        
-        // Calculate Battery Flow if we have adapter and system power
-        if let adapter = state["adapterWatts"] as? Int,
-           let system = state["systemPowerWatts"] as? Double {
-            state["batteryPowerWatts"] = Double(adapter) - system
-        } else if let amp = SMCComm.readInt16BE("B0AC"), let volt = state["voltage"] as? Double {
-            // Fallback to amperage * voltage
-            state["batteryPowerWatts"] = (Double(amp) * volt) / 1000.0
+            
+            // Calculate Battery Flow
+            if let adapter = adapterWatts {
+                state["batteryPowerWatts"] = adapter - Double(systemWatts)
+            } else if pm.adapterDisabledManual || (pm.floatingModeEnabled && !pm.isChargingEnabledState) {
+                // Adapter is isolated, we know flow is exactly -system load
+                state["batteryPowerWatts"] = -Double(systemWatts)
+            } else if let amp = ampValue, let volt = state["voltage"] as? Double {
+                // Fallback to amperage * voltage (with sanity check)
+                let calculated = (Double(amp) * volt) / 1000.0
+                if calculated < 150.0 && calculated > -150.0 {
+                    state["batteryPowerWatts"] = calculated
+                }
+            }
         }
         
         // 3. Health & Capacity
