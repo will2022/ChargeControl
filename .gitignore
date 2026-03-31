@@ -27,3 +27,6 @@ Thumbs.db
 *~
 test_*.swift
 check_*.swift
+
+# Disk images
+*.dmg

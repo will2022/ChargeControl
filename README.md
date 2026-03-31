@@ -48,39 +48,67 @@ Unlike standard macOS battery management, ChargeControl gives you direct control
 
 ## 🛠️ Installation & Setup
 
-### 1. Build from Source
+Choose your preferred way to install ChargeControl.
 
+### 1. The "Standard Mac" way (DMG) [Recommended]
+1. Go to the [Releases](https://github.com/will2022/ChargeControl/releases) page.
+2. Download the latest `ChargeControl.dmg`.
+3. Double-click the DMG and drag **ChargeControl** to your **Applications** folder.
+
+### 2. The Homebrew way
+If you have [Homebrew](https://brew.sh) installed, run:
+```bash
+brew tap will2022/chargecontrol
+brew install --cask will2022/chargecontrol/chargecontrol
+```
+
+### 3. The One-Liner (Terminal)
+Run this command to automatically download and install the latest release:
+```bash
+curl -sL https://raw.githubusercontent.com/will2022/ChargeControl/main/install.sh | bash
+```
+
+### 4. Build from Source (Developers)
 1. Clone the repository:
    ```bash
    git clone https://github.com/will2022/ChargeControl.git
-   cd ChargeControl/ChargeControl
+   cd ChargeControl
    ```
-2. Run the build script:
+2. Build the app:
    ```bash
    ./build.sh
+   ./package.sh  # To generate the DMG
    ```
-   The built application will be located at `build/ChargeControl.app`.
+3. Move `build/ChargeControl.app` to `/Applications`.
 
-### 2. Install to Applications
+---
 
-For the background daemon to work reliably with macOS security policies (`SMAppService`), it is recommended to move the app to your `/Applications` folder:
+## 🛡️ Security & Permissions
 
-```bash
-cp -R build/ChargeControl.app /Applications/
-```
+Because ChargeControl is currently distributed independently and interacts with low-level system hardware (SMC), you will likely encounter macOS security warnings.
 
-### 3. Install the CLI (Optional)
+### 1. "Unidentified Developer" Warning
+When you first try to open the app, macOS may block it because it isn't signed with an Apple Developer Certificate.
+- **The Fix:** Don't just double-click it. **Right-click (or Control-click)** the app icon and select **Open**. This will present a dialog with an "Open" button that isn't usually there, allowing you to bypass the check.
 
-To use the CLI from anywhere, symlink the binary to your path:
+### 2. Administrator Password
+Once opened, the app needs to install a background helper daemon (`ChargeControlDaemon`) to talk to your battery hardware.
+- **The Fix:** You will be prompted for your **Administrator Password**. This is required for the app to enforce your battery limits while your Mac is asleep or on the lock screen.
+
+### 3. Background Items
+You may see a system notification that "ChargeControl" has added a background item. This is normal and necessary for the daemon to stay active.
+
+---
+
+## ⌨️ Installing the CLI (Optional)
+
+The `cc` command-line tool allows you to control the app from the terminal. 
+- If you installed via **Homebrew** or the **One-Liner**, the CLI is already installed!
+- If you installed via the **DMG** or built from source, you can symlink it manually:
+
 ```bash
 sudo ln -s /Applications/ChargeControl.app/Contents/MacOS/cc /usr/local/bin/cc
 ```
-
-### 4. First Run & Permissions
-
-1. Open `ChargeControl.app` from your `/Applications` folder.
-2. The app will attempt to register its privileged helper tool (`ChargeControlDaemon`).
-3. **Password Prompt:** macOS will prompt you for your administrator password to authorize the background service.
 
 ---
 
