@@ -175,7 +175,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
     
-    func applySettings(chargeLimit: Double, startLimit: Double, floatingMode: Bool, isAudioWarningEnabled: Bool, audioSoundName: String, autoDischarge: Bool, heatProtection: Bool, heatThreshold: Double, magSafeSync: Bool, sleepDuringCharge: Bool, sleepDuringDischarge: Bool, powerUserMode: Bool, battery: BatteryState) {
+    func applySettings(chargeLimit: Double, startLimit: Double, floatingMode: Bool, isAudioWarningEnabled: Bool, audioSoundName: String, autoDischarge: Bool, heatProtection: Bool, heatThreshold: Double, magSafeSync: Bool, sleepDuringCharge: Bool, sleepDuringDischarge: Bool, disableSleepAggressive: Bool, powerUserMode: Bool, battery: BatteryState) {
         logToFile("Applying settings: limit=\(chargeLimit), start=\(startLimit)")
         let proxy = getXPCConnection().remoteObjectProxyWithErrorHandler { error in
             appLogger.error("XPC Error applying settings: \(error.localizedDescription)")
@@ -193,6 +193,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "magSafeSync": magSafeSync,
             "sleepDuringCharge": sleepDuringCharge,
             "sleepDuringDischarge": sleepDuringDischarge,
+            "sleepAggressive": disableSleepAggressive,
             "powerUserMode": powerUserMode
         ], reply: { status in
             appLogger.info("Settings applied: \(status)")
@@ -210,6 +211,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     battery.magSafeSync = magSafeSync
                     battery.sleepDuringCharge = sleepDuringCharge
                     battery.sleepDuringDischarge = sleepDuringDischarge
+                    battery.disableSleepAggressive = disableSleepAggressive
                     battery.powerUserMode = powerUserMode
                 }
             }

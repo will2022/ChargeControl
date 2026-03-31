@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var magSafeSync: Bool = true
     @State private var sleepDuringCharge: Bool = true
     @State private var sleepDuringDischarge: Bool = true
+    @State private var sleepAggressive: Bool = false
     @State private var powerUserMode: Bool = false
     
     private var hasChanges: Bool {
@@ -35,6 +36,7 @@ struct SettingsView: View {
                magSafeSync != battery.magSafeSync ||
                sleepDuringCharge != battery.sleepDuringCharge ||
                sleepDuringDischarge != battery.sleepDuringDischarge ||
+               sleepAggressive != battery.disableSleepAggressive ||
                powerUserMode != battery.powerUserMode
     }
     
@@ -138,6 +140,7 @@ struct SettingsView: View {
             magSafeSync = battery.magSafeSync
             sleepDuringCharge = battery.sleepDuringCharge
             sleepDuringDischarge = battery.sleepDuringDischarge
+            sleepAggressive = battery.disableSleepAggressive
             powerUserMode = battery.powerUserMode
         }
     }
@@ -349,6 +352,15 @@ struct SettingsView: View {
                         Toggle("Stay Awake while Discharging", isOn: $sleepDuringDischarge)
                         Spacer()
                         InfoButton(title: "Wake while Discharging", text: "Ensures the system stays awake when forcing battery power, especially critical for keeping the Mac active in Clamshell Mode.")
+                    }
+
+                    if powerUserMode {
+                        HStack {
+                            Toggle("Aggressive Sleep Prevention", isOn: $sleepAggressive)
+                            Spacer()
+                            InfoButton(title: "Aggressive Mode", text: "Uses a low-level power block instead of standard assertions. Prevents lock-on-lid-close, but guarantees limits in stubborn clamshell setups.")
+                        }
+                        .padding(.top, 5)
                     }
                 }
             }
@@ -595,6 +607,7 @@ struct SettingsView: View {
                     magSafeSync: magSafeSync,
                     sleepDuringCharge: sleepDuringCharge,
                     sleepDuringDischarge: sleepDuringDischarge,
+                    disableSleepAggressive: sleepAggressive,
                     powerUserMode: powerUserMode,
                     battery: battery
                 )

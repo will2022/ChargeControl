@@ -20,6 +20,7 @@ class PowerMonitor {
     private let magSafeSyncKey = "magSafeSync"
     private let sleepDuringChargeKey = "sleepDuringCharge"
     private let sleepDuringDischargeKey = "sleepDuringDischarge"
+    private let sleepAggressiveKey = "sleepAggressive"
     private let powerUserModeKey = "powerUserMode"
     
     private var runLoopSource: Unmanaged<CFRunLoopSource>?
@@ -41,6 +42,7 @@ class PowerMonitor {
     var magSafeSyncEnabled: Bool
     var disableSleepDuringCharge: Bool
     var disableSleepDuringDischarge: Bool
+    var disableSleepAggressive: Bool
     var powerUserModeEnabled: Bool
     
     private var currentSleepDisabled: Bool = false
@@ -63,6 +65,7 @@ class PowerMonitor {
         self.magSafeSyncEnabled = defaults.object(forKey: magSafeSyncKey) != nil ? defaults.bool(forKey: magSafeSyncKey) : true
         self.disableSleepDuringCharge = defaults.object(forKey: sleepDuringChargeKey) != nil ? defaults.bool(forKey: sleepDuringChargeKey) : true
         self.disableSleepDuringDischarge = defaults.object(forKey: sleepDuringDischargeKey) != nil ? defaults.bool(forKey: sleepDuringDischargeKey) : true
+        self.disableSleepAggressive = defaults.bool(forKey: sleepAggressiveKey)
         self.powerUserModeEnabled = defaults.bool(forKey: powerUserModeKey)
         
         PowerManagement.restore()
@@ -229,11 +232,13 @@ class PowerMonitor {
         checkBatteryState()
     }
 
-    func setSleepSettings(disableDuringCharge: Bool, disableDuringDischarge: Bool) {
+    func setSleepSettings(disableDuringCharge: Bool, disableDuringDischarge: Bool, aggressive: Bool) {
         self.disableSleepDuringCharge = disableDuringCharge
         self.disableSleepDuringDischarge = disableDuringDischarge
+        self.disableSleepAggressive = aggressive
         UserDefaults.standard.set(disableDuringCharge, forKey: sleepDuringChargeKey)
         UserDefaults.standard.set(disableDuringDischarge, forKey: sleepDuringDischargeKey)
+        UserDefaults.standard.set(aggressive, forKey: sleepAggressiveKey)
         UserDefaults.standard.synchronize()
         checkBatteryState()
     }
@@ -254,8 +259,11 @@ class PowerMonitor {
                            (isDischarging && disableSleepDuringDischarge))
         
         if shouldInhibit != currentSleepDisabled {
-            PowerManagement.setSleepDisabled(shouldInhibit)
+            PowerManagement.setSleepDisabled(shouldInhibit, aggressive: disableSleepAggressive)
             currentSleepDisabled = shouldInhibit
+        } else if shouldInhibit && currentSleepDisabled {
+            // Re-apply if settings changed (e.g. switching between aggressive and standard)
+            PowerManagement.setSleepDisabled(true, aggressive: disableSleepAggressive)
         }
     }
     

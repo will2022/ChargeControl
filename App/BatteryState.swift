@@ -32,6 +32,7 @@ class BatteryState: ObservableObject {
     @Published var magSafeSync: Bool = true
     @Published var sleepDuringCharge: Bool = true
     @Published var sleepDuringDischarge: Bool = true
+    @Published var disableSleepAggressive: Bool = false
     @Published var powerUserMode: Bool = false
     @Published var batteryTemp: Double? = nil
     @Published var temperatures: [String: Double] = [:]
@@ -176,6 +177,7 @@ class BatteryState: ObservableObject {
                     if let magSafeSync = state["magSafeSync"] as? Bool { self.magSafeSync = magSafeSync }
                     if let sleepCharge = state["sleepDuringCharge"] as? Bool { self.sleepDuringCharge = sleepCharge }
                     if let sleepDischarge = state["sleepDuringDischarge"] as? Bool { self.sleepDuringDischarge = sleepDischarge }
+                    if let sleepAggressive = state["sleepAggressive"] as? Bool { self.disableSleepAggressive = sleepAggressive }
                     if let powerUser = state["powerUserMode"] as? Bool { self.powerUserMode = powerUser }
                     
                     // Prioritize SMC-based telemetry from daemon

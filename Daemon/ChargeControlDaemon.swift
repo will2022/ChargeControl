@@ -33,6 +33,7 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
         state["magSafeSync"] = pm.magSafeSyncEnabled
         state["sleepDuringCharge"] = pm.disableSleepDuringCharge
         state["sleepDuringDischarge"] = pm.disableSleepDuringDischarge
+        state["sleepAggressive"] = pm.disableSleepAggressive
         state["heatProtectionTriggered"] = pm.isHeatProtectionTriggered
         state["powerUserMode"] = pm.powerUserModeEnabled
         
@@ -162,7 +163,8 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
 
         if let sleepCharge = settings["sleepDuringCharge"] as? Bool,
            let sleepDischarge = settings["sleepDuringDischarge"] as? Bool {
-            pm.setSleepSettings(disableDuringCharge: sleepCharge, disableDuringDischarge: sleepDischarge)
+            let aggressive = settings["sleepAggressive"] as? Bool ?? false
+            pm.setSleepSettings(disableDuringCharge: sleepCharge, disableDuringDischarge: sleepDischarge, aggressive: aggressive)
         }
 
         if let powerUser = settings["powerUserMode"] as? Bool {
