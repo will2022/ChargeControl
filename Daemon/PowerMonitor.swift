@@ -326,8 +326,7 @@ class PowerMonitor {
             if currentTemp >= heatThreshold {
                 DaemonLogger.shared.log("Heat protection active (\(currentTemp)°C). Disabling charging.")
                 isHeatProtectionTriggered = true
-                _ = SMCComm.writeKey("CH0C", value: [0x01])
-                _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
+                _ = SMCComm.disableCharging()
                 updateMagSafeLED(chargingDisabled: true, isManualDischarge: false)
                 updateSleepAssertion(isCharging: false, isDischarging: false)
                 return
@@ -338,8 +337,7 @@ class PowerMonitor {
         // 2. Charge to Full
         if chargingToFull {
             DaemonLogger.shared.log("Charge to full active.")
-            _ = SMCComm.writeKey("CH0C", value: [0x00])
-            _ = SMCComm.writeKey("CHTE", value: [0x00, 0x00, 0x00, 0x00])
+            _ = SMCComm.enableCharging()
             _ = SMCComm.writeKey("CHIE", value: [0x00])
             _ = SMCComm.writeKey("CH0J", value: [0x00])
             updateMagSafeLED(chargingDisabled: false, isManualDischarge: false)
@@ -350,8 +348,7 @@ class PowerMonitor {
         // 3. Manual Overrides
         if adapterDisabledManual {
             DaemonLogger.shared.log("Manual adapter disable active.")
-            _ = SMCComm.writeKey("CH0C", value: [0x01])
-            _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
+            _ = SMCComm.disableCharging()
             _ = SMCComm.writeKey("CHIE", value: [0x08])
             _ = SMCComm.writeKey("CH0J", value: [0x20])
             updateMagSafeLED(chargingDisabled: true, isManualDischarge: true)
@@ -361,8 +358,7 @@ class PowerMonitor {
 
         if chargingDisabledManual {
             DaemonLogger.shared.log("Manual charging disable active.")
-            _ = SMCComm.writeKey("CH0C", value: [0x01])
-            _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
+            _ = SMCComm.disableCharging()
             _ = SMCComm.writeKey("CHIE", value: [0x00])
             _ = SMCComm.writeKey("CH0J", value: [0x00])
             updateMagSafeLED(chargingDisabled: true, isManualDischarge: false)
@@ -389,13 +385,12 @@ class PowerMonitor {
                     }
 
                     if !isChargingEnabledState {
-                        // Check if macOS overrode our setting
+                        // Check if macOS overrode our setting (CH0C 0x00 == charging enabled)
                         if let currentCH0C = SMCComm.readKey("CH0C"), currentCH0C.first == 0x00 {
-                            DaemonLogger.shared.log("macOS override detected! CH0C was 00 (enabled), forcing back to 01 (inhibited).")
+                            DaemonLogger.shared.log("macOS override detected! CH0C was 00 (enabled), forcing back to inhibited.")
                         }
 
-                        _ = SMCComm.writeKey("CH0C", value: [0x01])
-                        _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
+                        _ = SMCComm.disableCharging()
 
                         var isDischarging = false
                         if floatingModeEnabled || (autoDischargeEnabled && cap > maxLimit) {
@@ -418,8 +413,7 @@ class PowerMonitor {
                         updateSleepAssertion(isCharging: false, isDischarging: isDischarging)
                     } else {
                         DaemonLogger.shared.log("Control: Allowing charge (\(cap)% < \(startLimit)% start target).")
-                        _ = SMCComm.writeKey("CH0C", value: [0x00])
-                        _ = SMCComm.writeKey("CHTE", value: [0x00, 0x00, 0x00, 0x00])
+                        _ = SMCComm.enableCharging()
                         _ = SMCComm.writeKey("CHIE", value: [0x00])
                         _ = SMCComm.writeKey("CH0J", value: [0x00])
                         

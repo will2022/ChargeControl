@@ -6,7 +6,11 @@ let smcLogger = Logger(subsystem: "com.chargecontrol.daemon", category: "SMC")
 
 public struct SMCComm {
     private static var connection: io_connect_t = 0
-    
+
+    /// Cache of which keys the SMC exposes, so firmware detection probes each
+    /// key only once.
+    private static var keyCapabilities: [String: Bool] = [:]
+
     public static func open() -> Bool {
         guard connection == 0 else { return true }
         
@@ -188,6 +192,55 @@ public struct SMCComm {
     public static func readUInt32(_ key: String) -> UInt32? {
         guard let bytes = readKey(key), bytes.count == 4 else { return nil }
         return bytes.withUnsafeBytes { $0.load(as: UInt32.self) }
+    }
+
+    /// Whether the SMC exposes a given key on this machine. The result is
+    /// cached, so the key-info lookup only runs once per key.
+    private static func keyExists(_ key: String) -> Bool {
+        if let cached = keyCapabilities[key] { return cached }
+        guard open() else { return false }
+
+        var input = SMCParamStruct()
+        var output = SMCParamStruct()
+        input.key = key.fourCharCode
+        input.data8 = UInt8(kSMCGetKeyInfo)
+
+        let result = callSMCFunctionYPC(input: &input, output: &output)
+        let exists = result == kIOReturnSuccess && output.result == UInt8(kSMCSuccess)
+        keyCapabilities[key] = exists
+        return exists
+    }
+
+    /// Pre-Tahoe firmware exposes the CH0B/CH0C charging keys; Tahoe and later
+    /// use CHTE instead. We prefer the legacy pair when both are present.
+    private static var usesLegacyChargingKeys: Bool {
+        return keyExists("CH0B") && keyExists("CH0C")
+    }
+
+    /// Inhibit or allow battery charging. While inhibited the system runs from
+    /// the adapter and the battery is bypassed (neither charged nor discharged).
+    ///
+    /// Values match the `batt` reference: pre-Tahoe firmware writes 0x02/0x00 to
+    /// both CH0B and CH0C; Tahoe firmware writes 0x01/0x00 to CHTE.
+    private static func setChargingInhibited(_ inhibited: Bool) -> Bool {
+        if usesLegacyChargingKeys {
+            let value: UInt8 = inhibited ? 0x02 : 0x00
+            let b = writeKey("CH0B", value: [value])
+            let c = writeKey("CH0C", value: [value])
+            return b && c
+        }
+        let value: UInt8 = inhibited ? 0x01 : 0x00
+        return writeKey("CHTE", value: [value, 0x00, 0x00, 0x00])
+    }
+
+    /// Inhibit charging (bypass the battery, run from the adapter).
+    public static func disableCharging() -> Bool {
+        return setChargingInhibited(true)
+    }
+
+    /// Allow charging.
+    public static func enableCharging() -> Bool {
+        return setChargingInhibited(false)
     }
 
     public enum MagSafeColor: UInt8 {

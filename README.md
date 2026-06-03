@@ -187,7 +187,8 @@ graph TD
 
 ### SMC Keys (Apple Silicon)
 ChargeControl interacts with the AppleSMC using the following keys:
-- `CH0C` / `CHTE`: Charging control (0 = Enable, 1 = Disable).
+- `CH0B` / `CH0C`: Charging control on pre-Tahoe firmware — both are written together (`0x00` = Enable, `0x02` = Disable/bypass).
+- `CHTE`: Charging control on Tahoe firmware (`00 00 00 00` = Enable, `01 00 00 00` = Disable).
 - `CHIE` / `CH0J`: Power adapter isolation (0 = Connected, 8/32 = Isolated).
 - `ACLC`: MagSafe LED control (0 = System, 1 = Off, 3 = Green, 4 = Orange).
 - `B0Te`, `TC0P`, `TG0P`, `Ts0P`: Thermal sensors (Battery, CPU, GPU, Palm Rest).
