@@ -57,6 +57,7 @@ struct SettingsView: View {
                     
                     SidebarItem(title: "Analytics", icon: "chart.xyaxis.line", selection: $selection)
                     SidebarItem(title: "History", icon: "clock.arrow.circlepath", selection: $selection)
+                    SidebarItem(title: "Energy Matrix", icon: "bolt.batteryblock.fill", selection: $selection)
                 }
                 
                 Spacer()
@@ -112,6 +113,7 @@ struct SettingsView: View {
                     case "General": generalTab
                     case "Advanced": advancedTab
                     case "Protection": protectionTab
+                    case "Energy Matrix": EnergyUsageView(battery: battery)
                     case "Analytics": analyticsTab
                     case "History": historyTab
                     default: generalTab

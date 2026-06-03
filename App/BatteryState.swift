@@ -11,6 +11,13 @@ struct BatteryHistoryItem: Identifiable {
     let systemPowerWatts: Double
 }
 
+struct ProcessEnergyInfo: Identifiable {
+    let id: String // PID or Name
+    let name: String
+    let energyImpact: Double
+    let icon: NSImage?
+}
+
 class BatteryState: ObservableObject {
     @Published var percentage: Int = 100
     @Published var isPluggedIn: Bool = false
@@ -62,12 +69,23 @@ class BatteryState: ObservableObject {
     @Published var adapterDescription: String = "--"
     
     @Published var history: [BatteryHistoryItem] = []
+    @Published var energyConsumers: [ProcessEnergyInfo] = []
+    @Published var historicalEnergyConsumers: [ProcessEnergyInfo] = []
+    @Published var energyError: String? = nil
+    @Published var lastEnergyUpdate: Date = .distantPast
+    
+    private var lastHistoryFetch: Date = .distantPast
+    private var iconCache: [String: NSImage] = [:]
     
     private var sound: NSSound?
     private var runLoopSource: Unmanaged<CFRunLoopSource>?
     private var refreshTimer: Timer?
     private var xpcConnection: NSXPCConnection?
     
+    // Caching for energy optimization
+    private var lastIconState: (Int, Bool, Bool)? = nil
+    private var lastIcon: NSImage? = nil
+
     private func getXPCConnection() -> NSXPCConnection {
         if let conn = xpcConnection { return conn }
         let conn = NSXPCConnection(machServiceName: "com.chargecontrol.daemon")
@@ -87,11 +105,12 @@ class BatteryState: ObservableObject {
         update()
         startMonitoring()
         
-        // Start a frequent refresh timer for real-time stats
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Polling interval increased from 2.0s to 10.0s for energy efficiency.
+        // IOPSNotification handles immediate updates for percentage/charging state changes.
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.update()
         }
-        refreshTimer?.tolerance = 1.0  // Allow macOS to coalesce timer for power efficiency
+        refreshTimer?.tolerance = 2.0  // Allow significant coalescence for power efficiency
     }
     
     func startMonitoring() {
@@ -124,7 +143,17 @@ class BatteryState: ObservableObject {
                         self.percentage = currentCapacity
                         self.isPluggedIn = (powerSourceState == kIOPSACPowerValue)
                         self.isCharging = charging
-                        self.icon = self.drawBatteryIcon(percentage: currentCapacity, isPluggedIn: self.isPluggedIn, isCharging: self.isCharging)
+                        
+                        // Optimized: Only redraw icon if state actually changed
+                        if self.lastIconState?.0 != currentCapacity || 
+                           self.lastIconState?.1 != self.isPluggedIn || 
+                           self.lastIconState?.2 != charging || 
+                           self.lastIcon == nil {
+                            let newIcon = self.drawBatteryIcon(percentage: currentCapacity, isPluggedIn: self.isPluggedIn, isCharging: self.isCharging)
+                            self.icon = newIcon
+                            self.lastIcon = newIcon
+                            self.lastIconState = (currentCapacity, self.isPluggedIn, charging)
+                        }
                         
                         if transitionToCharging && self.isAudioWarningEnabled {
                             self.playWarningSound()
@@ -135,26 +164,10 @@ class BatteryState: ObservableObject {
             }
         }
         
-        // Comprehensive ioreg parsing
-        let task = Process()
-        task.launchPath = "/usr/sbin/ioreg"
-        task.arguments = ["-r", "-c", "AppleSmartBattery"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8) {
-                parseIoreg(output)
-            }
-        } catch {
-            logToFile("Failed to run ioreg: \(error.localizedDescription)")
-        }
+        // 2-minute cadence for less critical stats is handled by the daemon logic now.
+        // We removed the ioreg process spawning here to save battery.
         
-        fetchHistory()
-        
-        // Fetch state from daemon for SMC-only keys
+        // Fetch state from daemon for ALL telemetry
         let proxy = getXPCConnection().remoteObjectProxyWithErrorHandler { error in
             appLogger.error("XPC Error getting state: \(error.localizedDescription)")
         } as? ChargeControlDaemonProtocol
@@ -164,6 +177,7 @@ class BatteryState: ObservableObject {
                 DispatchQueue.main.async {
                     self.chargingDisabled = state["chargingDisabled"] as? Bool ?? false
                     self.adapterDisabled = state["adapterDisabled"] as? Bool ?? false
+                    
                     if let limit = state["maxLimit"] as? Int { self.maxLimit = limit }
                     if let start = state["startLimit"] as? Int { self.startLimit = start }
                     if let audioEnabled = state["audioWarningEnabled"] as? Bool { self.isAudioWarningEnabled = audioEnabled }
@@ -179,20 +193,30 @@ class BatteryState: ObservableObject {
                     if let sleepDischarge = state["sleepDuringDischarge"] as? Bool { self.sleepDuringDischarge = sleepDischarge }
                     if let sleepAggressive = state["sleepAggressive"] as? Bool { self.disableSleepAggressive = sleepAggressive }
                     if let powerUser = state["powerUserMode"] as? Bool { self.powerUserMode = powerUser }
+
+                    // Mapping from consolidated Daemon Telemetry
+                    if let serial = state["batterySerial"] as? String { self.batterySerial = serial }
+                    if let model = state["batteryModel"] as? String { self.batteryModel = model }
+                    if let cap = state["nominalCapacity"] as? Int { self.nominalCapacity = cap }
+                    if let dCap = state["designCapacity"] as? Int { self.designCapacity = dCap }
+                    if let rawMax = state["rawMaxCapacity"] as? Int { self.rawMaxCapacity = rawMax }
+                    if let rawCur = state["rawCurrentCapacity"] as? Int { self.rawCurrentCapacity = rawCur }
+                    if let watts = state["adapterWatts"] as? Int { self.adapterWatts = watts }
+                    if let desc = state["adapterDescription"] as? String { self.adapterDescription = desc }
                     
-                    // Prioritize SMC-based telemetry from daemon
                     if let temp = state["batteryTemp"] as? Double { self.batteryTemp = temp }
+                    if let ioregTemp = state["ioregTemp"] as? Double {
+                        if self.batteryTemp == nil || self.batteryTemp == 0 { self.batteryTemp = ioregTemp }
+                    }
+                    
                     if let temps = state["temperatures"] as? [String: Double] { self.temperatures = temps }
                     if let amp = state["amperage"] as? Int { self.amperage = amp }
                     if let volt = state["voltage"] as? Double { self.voltage = volt }
                     if let sysPower = state["systemPowerWatts"] as? Double { self.systemPowerWatts = sysPower }
                     if let battWatts = state["batteryPowerWatts"] as? Double { self.powerWatts = battWatts }
                     if let cycles = state["cycleCount"] as? Int { self.cycleCount = cycles }
-                    if let maxCap = state["maxCapacity"] as? Int { self.rawMaxCapacity = maxCap }
-                    if let designCap = state["designCapacity"] as? Int { self.designCapacity = designCap }
-                    if let currentCap = state["currentCapacity"] as? Int { self.rawCurrentCapacity = currentCap }
                     
-                    // Derived stats
+                    // Prioritize SMC-based telemetry if available
                     self.powerWatts = (self.voltage * Double(self.amperage)) / 1000.0
                     if self.designCapacity > 0 {
                         self.health = (Double(self.rawMaxCapacity) / Double(self.designCapacity)) * 100.0
@@ -200,6 +224,101 @@ class BatteryState: ObservableObject {
                 }
             }
         })
+        
+        // Rate-limited logic for History & Analytics
+        let now = Date()
+        if now.timeIntervalSince(lastHistoryFetch) > 60 {
+            fetchHistory()
+            fetchHistoricalEnergyImpact()
+            lastHistoryFetch = now
+        }
+        
+        // Fetch Energy Impact Diagnostic Dictionary
+        proxy?.getEnergyImpact(reply: { dict in
+            guard let dict = dict else { return }
+            
+            let consumersData = dict["consumers"] as? [[String: Any]] ?? []
+            let error = dict["error"] as? String
+            let timestamp = dict["lastUpdate"] as? Date ?? .distantPast
+            
+            let consumers = consumersData.compactMap { item -> ProcessEnergyInfo? in
+                guard let name = item["name"] as? String,
+                      let pid = item["pid"] as? Int,
+                      let impact = item["energy_impact"] as? Double else { return nil }
+                
+                let icon = self.getIconForProcess(pid: pid, name: name)
+                return ProcessEnergyInfo(id: "\(pid)", name: name, energyImpact: impact, icon: icon)
+            }
+            
+            DispatchQueue.main.async {
+                self.energyConsumers = consumers
+                self.energyError = error
+                self.lastEnergyUpdate = timestamp
+            }
+        })
+    }
+    
+    func fetchHistoricalEnergyImpact() {
+        let proxy = getXPCConnection().remoteObjectProxyWithErrorHandler { error in
+            appLogger.error("XPC Error fetching historical energy impact: \(error.localizedDescription)")
+        } as? ChargeControlDaemonProtocol
+        
+        proxy?.getHistoricalEnergyImpact(reply: { dict in
+            guard let dict = dict else { return }
+            
+            let consumersData = dict["consumers"] as? [[String: Any]] ?? []
+            
+            let consumers = consumersData.compactMap { item -> ProcessEnergyInfo? in
+                guard let name = item["name"] as? String,
+                      let impact = item["energy_impact"] as? Double else { return nil }
+                
+                let icon = self.getIconForProcess(pid: 0, name: name)
+                return ProcessEnergyInfo(id: name, name: name, energyImpact: impact, icon: icon)
+            }
+            
+            DispatchQueue.main.async {
+                self.historicalEnergyConsumers = consumers
+            }
+        })
+    }
+    
+    private func getIconForProcess(pid: Int, name: String) -> NSImage? {
+        let cacheKey = pid > 0 ? "\(pid)" : name
+        if let cached = iconCache[cacheKey] { return cached }
+        
+        var finalIcon: NSImage? = nil
+        
+        // 1. Primary: Try via PID
+        if let app = NSRunningApplication(processIdentifier: pid_t(pid)) {
+            finalIcon = app.icon
+        }
+        
+        // 2. Fallback: try to find by name/ID in /Applications
+        if finalIcon == nil {
+            let workspace = NSWorkspace.shared
+            if let url = workspace.urlForApplication(withBundleIdentifier: "com.apple.\(name)") ?? 
+                         workspace.urlForApplication(withBundleIdentifier: name) {
+                finalIcon = workspace.icon(forFile: url.path)
+            }
+        }
+        
+        // 3. Fallback: Common system processes or internal icons
+        if finalIcon == nil {
+            let lowerName = name.lowercased()
+            if lowerName.contains("kernel") || lowerName.contains("windowserver") || lowerName == "launchd" || lowerName.contains("daemon") {
+                finalIcon = NSImage(systemSymbolName: "cpu", accessibilityDescription: "System Process")
+            } else if lowerName.contains("chrome") {
+                finalIcon = NSImage(systemSymbolName: "globe", accessibilityDescription: "Web Browser")
+            } else if lowerName.contains("safari") {
+                finalIcon = NSImage(systemSymbolName: "safari", accessibilityDescription: "Web Browser")
+            }
+        }
+        
+        if let foundIcon = finalIcon {
+            iconCache[cacheKey] = foundIcon
+        }
+        
+        return finalIcon
     }
     
     private func fetchHistory() {

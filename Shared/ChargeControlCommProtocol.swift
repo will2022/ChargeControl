@@ -7,6 +7,8 @@ import Foundation
     func setSettings(settings: [String: Any], reply: @escaping (Int32) -> Void)
     func execute(command: Int32, reply: @escaping (Int32) -> Void)
     func getHistory(reply: @escaping ([[String: Any]]?) -> Void)
+    func getEnergyImpact(reply: @escaping ([String: Any]?) -> Void)
+    func getHistoricalEnergyImpact(reply: @escaping ([String: Any]?) -> Void)
 }
 
 public enum ChargeControlCommand: Int32 {

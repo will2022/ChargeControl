@@ -1,10 +1,15 @@
 import Foundation
 import os
+import IOKit
 
 let daemonLogger = Logger(subsystem: "com.chargecontrol.daemon", category: "Daemon")
 
 public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
     public static let shared = ChargeControlDaemon()
+    
+    // Caching for energy optimization
+    private var lastThermalRead: Date = .distantPast
+    private var cachedTemps: [String: Double] = [:]
     
     private override init() {
         super.init()
@@ -13,20 +18,27 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
     public func getUniqueId(reply: @escaping (String?) -> Void) {
         reply(Bundle.main.bundleIdentifier)
     }
+    
     public func getState(reply: @escaping ([String: Any]?) -> Void) {
-        var state: [String: Any] = [:]
-
         let pm = PowerMonitor.shared
+        var state: [String: Any] = [:]
+        
+        // 1. Logic State
+        state["isChargingEnabled"] = pm.isChargingEnabledState
+        state["adapterDisabledManual"] = pm.adapterDisabledManual
+        state["chargingDisabledManual"] = pm.chargingDisabledManual
+        state["chargingToFull"] = pm.chargingToFull
+        state["floatingModeEnabled"] = pm.floatingModeEnabled
+        state["powerUserMode"] = pm.powerUserModeEnabled
+        
+        // Legacy keys for UI compatibility
         state["chargingDisabled"] = pm.chargingDisabledManual
         state["adapterDisabled"] = pm.adapterDisabledManual
-
         state["maxLimit"] = pm.getMaxLimit()
         state["startLimit"] = pm.getStartLimit()
         state["floatingMode"] = pm.floatingModeEnabled
         state["audioWarningEnabled"] = pm.isAudioWarningEnabled()
         state["audioSoundName"] = pm.audioSoundName
-        state["chargingToFull"] = pm.chargingToFull
-
         state["autoDischarge"] = pm.autoDischargeEnabled
         state["heatProtection"] = pm.heatProtectionEnabled
         state["heatThreshold"] = pm.heatThreshold
@@ -35,78 +47,48 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
         state["sleepDuringDischarge"] = pm.disableSleepDuringDischarge
         state["sleepAggressive"] = pm.disableSleepAggressive
         state["heatProtectionTriggered"] = pm.isHeatProtectionTriggered
-        state["powerUserMode"] = pm.powerUserModeEnabled
         
-        // --- Expanded SMC Analytics ---
-        // 1. Thermal Sensors
-        var temps: [String: Double] = [:]
-        let tempKeys = [
-            "CPU": "TC0P", "GPU": "TG0P", "Battery": "B0Te",
-            "Logic Board": "TL0P", "Heat Pipe": "Th0H"
-        ]
-        for (name, key) in tempKeys {
-            if let t = SMCComm.readTemperature(key) {
-                temps[name] = t
+        // 2. Thermal Telemetry (Rate-limited to 15s)
+        let now = Date()
+        if now.timeIntervalSince(lastThermalRead) > 15 {
+            var temps: [String: Double] = [:]
+            if let batt = SMCComm.readFloat("TB0T") {
+                temps["Battery"] = Double(batt)
             }
+            if let cpu = SMCComm.readFloat("TC0P") {
+                temps["CPU"] = Double(cpu)
+            }
+            if let gpu = SMCComm.readFloat("TG0P") {
+                temps["GPU"] = Double(gpu)
+            }
+            if let palm = SMCComm.readFloat("Ts0P") {
+                temps["Palm Rest"] = Double(palm)
+            }
+            self.cachedTemps = temps
+            self.lastThermalRead = now
         }
-        if let palm = SMCComm.readFloat("Ts0P") {
-            temps["Palm Rest"] = Double(palm)
-        }
-        state["temperatures"] = temps
-        if let primary = temps["Battery"] ?? temps["CPU"] {
+        state["temperatures"] = cachedTemps
+        if let primary = cachedTemps["Battery"] ?? cachedTemps["CPU"] {
             state["batteryTemp"] = primary
         }
         
-        // 2. Power Telemetry (Validated Decodings)
-        var ampValue: Int?
-        if let amp = SMCComm.readInt16BE("B0AC") {
-            ampValue = Int(amp)
-            state["amperage"] = ampValue
-        }
+        // 3. Consolidated Battery Telemetry (from IOKit cached where possible)
+        let bt = BatteryTelemetry.shared.getTelemetry()
+        state["batterySerial"] = bt.serial
+        state["batteryModel"] = bt.model
+        state["nominalCapacity"] = bt.nominalChargeCapacity
+        state["designCapacity"] = bt.designCapacity
+        state["rawMaxCapacity"] = bt.appleRawMaxCapacity
+        state["rawCurrentCapacity"] = bt.appleRawCurrentCapacity
+        state["voltage"] = bt.voltage != nil ? Double(bt.voltage!) / 1000.0 : nil
+        state["amperage"] = bt.amperage
+        state["cycleCount"] = bt.cycleCount
+        state["adapterWatts"] = bt.adapterWatts
+        state["adapterDescription"] = bt.adapterDescription
         
-        if let volt = SMCComm.readUInt16LE("B0AV") {
-            state["voltage"] = Double(volt) / 1000.0
-        }
-
-        var adapterWatts: Double?
-        if let aw = SMCComm.readFloat("PDTR") {
-            adapterWatts = Double(aw)
-            state["adapterWatts"] = Int(aw)
-        }
-
-        if let systemWatts = SMCComm.readFloat("PSTR") {
-            state["systemPowerWatts"] = Double(systemWatts)
-            
-            // Calculate Battery Flow
-            if let adapter = adapterWatts {
-                state["batteryPowerWatts"] = adapter - Double(systemWatts)
-            } else if pm.adapterDisabledManual || (pm.floatingModeEnabled && !pm.isChargingEnabledState) {
-                // Adapter is isolated, we know flow is exactly -system load
-                state["batteryPowerWatts"] = -Double(systemWatts)
-            } else if let amp = ampValue, let volt = state["voltage"] as? Double {
-                // Fallback to amperage * voltage (with sanity check)
-                let calculated = (Double(amp) * volt) / 1000.0
-                if calculated < 150.0 && calculated > -150.0 {
-                    state["batteryPowerWatts"] = calculated
-                }
-            }
-        }
-        
-        // 3. Health & Capacity
-        if let cycles = SMCComm.readUInt16LE("B0CT") {
-            state["cycleCount"] = Int(cycles)
-        }
-        
-        if let maxCap = SMCComm.readUInt16LE("B0FC") {
-            state["maxCapacity"] = Int(maxCap)
-        }
-        
-        if let designCap = SMCComm.readUInt16LE("B0DC") {
-            state["designCapacity"] = Int(designCap)
-        }
-        
-        if let currentCap = SMCComm.readUInt16BE("B0RM") {
-            state["currentCapacity"] = Int(currentCap)
+        // Calculated/Legacy mappings
+        if let amp = bt.amperage, let volt = state["voltage"] as? Double {
+             state["batteryPowerWatts"] = (Double(amp) * volt) / 1000.0
         }
         
         reply(state)
@@ -121,103 +103,54 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
         reply([
             "maxLimit": pm.getMaxLimit(),
             "startLimit": pm.getStartLimit(),
-            "audioSoundName": pm.audioSoundName
+            "audioSoundName": pm.audioSoundName,
+            "powerUserMode": pm.powerUserModeEnabled,
+            "floatingMode": pm.floatingModeEnabled
         ])
     }
     
     public func setSettings(settings: [String: Any], reply: @escaping (Int32) -> Void) {
         let pm = PowerMonitor.shared
         
-        if let limit = settings["maxLimit"] as? Int {
-            pm.setMaxLimit(limit)
-        }
-        
-        if let startLimit = settings["startLimit"] as? Int {
-            pm.setStartLimit(startLimit)
-        }
-
-        if let floatingMode = settings["floatingMode"] as? Bool {
-            pm.setFloatingMode(floatingMode)
-        }
-        
-        if let audioEnabled = settings["audioWarningEnabled"] as? Bool {
-            pm.setAudioWarningEnabled(audioEnabled)
-        }
-        
-        if let audioSoundName = settings["audioSoundName"] as? String {
-            pm.setAudioSoundName(audioSoundName)
-        }
-
-        if let autoDischarge = settings["autoDischarge"] as? Bool {
-            pm.setAutoDischarge(autoDischarge)
-        }
-
-        if let heatEnabled = settings["heatProtection"] as? Bool,
-           let heatThreshold = settings["heatThreshold"] as? Double {
-            pm.setHeatProtection(heatEnabled, threshold: heatThreshold)
-        }
-
-        if let magSafeSync = settings["magSafeSync"] as? Bool {
-            pm.setMagSafeSync(magSafeSync)
-        }
-
-        if let sleepCharge = settings["sleepDuringCharge"] as? Bool,
-           let sleepDischarge = settings["sleepDuringDischarge"] as? Bool {
-            let aggressive = settings["sleepAggressive"] as? Bool ?? false
-            pm.setSleepSettings(disableDuringCharge: sleepCharge, disableDuringDischarge: sleepDischarge, aggressive: aggressive)
-        }
-
-        if let powerUser = settings["powerUserMode"] as? Bool {
-            pm.setPowerUserMode(powerUser)
-        }
+        if let limit = settings["maxLimit"] as? Int { pm.setMaxLimit(limit) }
+        if let startLimit = settings["startLimit"] as? Int { pm.setStartLimit(startLimit) }
+        if let floatingMode = settings["floatingMode"] as? Bool { pm.setFloatingMode(floatingMode) }
+        if let powerUser = settings["powerUserMode"] as? Bool { pm.setPowerUserMode(powerUser) }
         
         reply(0)
     }
     
     public func execute(command: Int32, reply: @escaping (Int32) -> Void) {
         guard let cmd = ChargeControlCommand(rawValue: command) else {
-            daemonLogger.error("Received unknown command: \(command)")
             reply(-1)
             return
         }
         
-        daemonLogger.info("Executing command: \(String(describing: cmd))")
-        var success = false
         let pm = PowerMonitor.shared
-        
         switch cmd {
-        case .disablePowerAdapter:
-            pm.setAdapterDisabledManual(true)
-            success = true
-        case .enablePowerAdapter:
-            pm.setAdapterDisabledManual(false)
-            success = true
-        case .chargeToFull:
-            pm.chargingDisabledManual = false
-            pm.chargingToFull = true
-            pm.checkBatteryState()
-            success = true
-        case .chargeToLimit:
-            pm.chargingDisabledManual = false
-            pm.chargingToFull = false
-            pm.checkBatteryState()
-            success = true
-        case .disableCharging:
-            pm.chargingToFull = false
-            pm.setChargingDisabledManual(true)
-            success = true
+        case .disablePowerAdapter: pm.disablePowerAdapter()
+        case .enablePowerAdapter: pm.enablePowerAdapter()
+        case .chargeToFull: pm.chargeToFullAction()
+        case .chargeToLimit: pm.chargeToLimitAction()
+        case .disableCharging: pm.disableChargingOnly()
+        case .isSupported: break
         case .testMagSafe:
-            _ = SMCComm.setMagSafeColor(.orangeSlowBlink)
-            // Revert after 5 seconds by triggering a full state check
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                pm.checkBatteryState()
+            _ = SMCComm.setMagSafeColor(.orange)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                _ = SMCComm.setMagSafeColor(.green)
             }
-            success = true
-        case .isSupported:
-            success = SMCComm.open()
+        @unknown default:
+            break
         }
-        
-        daemonLogger.info("Command \(String(describing: cmd)) success: \(success)")
-        reply(success ? 0 : 1)
+        reply(0)
+    }
+    
+    public func getEnergyImpact(reply: @escaping ([String : Any]?) -> Void) {
+        reply(EnergyMonitor.shared.getDiagnosticState())
+    }
+    
+    public func getHistoricalEnergyImpact(reply: @escaping ([String : Any]?) -> Void) {
+        let data = Database.shared.getHistoricalEnergyImpact()
+        reply(["consumers": data])
     }
 }

@@ -49,11 +49,12 @@ class PowerMonitor {
     var isChargingEnabledState: Bool = false
     var isHeatProtectionTriggered: Bool = false
 
+    private let defaults = UserDefaults(suiteName: "com.chargecontrol.daemon") ?? .standard
+    
     private init() {
-        let defaults = UserDefaults.standard
         self.maxLimit = defaults.integer(forKey: maxLimitKey) > 0 ? defaults.integer(forKey: maxLimitKey) : 80
         self.startLimit = defaults.integer(forKey: startLimitKey) > 0 ? defaults.integer(forKey: startLimitKey) : 75
-        self.floatingModeEnabled = defaults.object(forKey: floatingModeKey) != nil ? defaults.bool(forKey: floatingModeKey) : true
+        self.floatingModeEnabled = defaults.object(forKey: floatingModeKey) != nil ? defaults.bool(forKey: floatingModeKey) : false
         self.audioWarningEnabled = defaults.bool(forKey: audioWarningEnabledKey)
         self.audioSoundName = defaults.string(forKey: audioSoundNameKey) ?? "charging"
         self.chargingDisabledManual = defaults.bool(forKey: chargingDisabledManualKey)
@@ -81,7 +82,7 @@ class PowerMonitor {
         
         if let rls = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), rls.takeUnretainedValue(), .defaultMode)
-            monitorLogger.info("Started monitoring battery state.")
+            DaemonLogger.shared.log("Started monitoring battery state.")
             checkBatteryState()
         }
 
@@ -119,12 +120,14 @@ class PowerMonitor {
                     let volt = Double(SMCComm.readUInt16LE("B0AV") ?? 0) / 1000.0
                     let sysWatts = Double(SMCComm.readFloat("PSTR") ?? 0)
                     let adapterWatts = Double(SMCComm.readFloat("PDTR") ?? 0)
-                    
+
                     // Battery Flow: Adapter Input minus System Load
                     // If result is positive, we are charging. If negative, we are discharging.
                     let battWatts = adapterWatts - sysWatts
-                    
+
                     let temp = SMCComm.readTemperature("B0Te") ?? 0.0
+                    
+                    DaemonLogger.shared.log("Periodic Log: \(cap)%, \(volt)V, Sys: \(sysWatts)W, Batt: \(battWatts)W, Temp: \(temp)°C")
                     
                     Database.shared.logStats(
                         percentage: cap,
@@ -153,23 +156,23 @@ class PowerMonitor {
     
     func setMaxLimit(_ limit: Int) {
         maxLimit = limit
-        UserDefaults.standard.set(limit, forKey: maxLimitKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(limit, forKey: maxLimitKey)
+        defaults.synchronize()
         checkBatteryState()
         SMCComm.cycleAdapter()
     }
     
     func setStartLimit(_ limit: Int) {
         startLimit = limit
-        UserDefaults.standard.set(limit, forKey: startLimitKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(limit, forKey: startLimitKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setFloatingMode(_ enabled: Bool) {
         floatingModeEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: floatingModeKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: floatingModeKey)
+        defaults.synchronize()
         checkBatteryState()
     }
     
@@ -178,14 +181,14 @@ class PowerMonitor {
 
     func setAudioWarningEnabled(_ enabled: Bool) {
         audioWarningEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: audioWarningEnabledKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: audioWarningEnabledKey)
+        defaults.synchronize()
     }
 
     func setAudioSoundName(_ name: String) {
         audioSoundName = name
-        UserDefaults.standard.set(name, forKey: audioSoundNameKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(name, forKey: audioSoundNameKey)
+        defaults.synchronize()
     }
 
     func isAudioWarningEnabled() -> Bool {
@@ -194,38 +197,38 @@ class PowerMonitor {
 
     func setChargingDisabledManual(_ disabled: Bool) {
         chargingDisabledManual = disabled
-        UserDefaults.standard.set(disabled, forKey: chargingDisabledManualKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(disabled, forKey: chargingDisabledManualKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setAdapterDisabledManual(_ disabled: Bool) {
         adapterDisabledManual = disabled
-        UserDefaults.standard.set(disabled, forKey: adapterDisabledManualKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(disabled, forKey: adapterDisabledManualKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setAutoDischarge(_ enabled: Bool) {
         autoDischargeEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: autoDischargeKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: autoDischargeKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setHeatProtection(_ enabled: Bool, threshold: Double) {
         heatProtectionEnabled = enabled
         heatThreshold = threshold
-        UserDefaults.standard.set(enabled, forKey: heatProtectionKey)
-        UserDefaults.standard.set(threshold, forKey: heatThresholdKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: heatProtectionKey)
+        defaults.set(threshold, forKey: heatThresholdKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setMagSafeSync(_ enabled: Bool) {
         magSafeSyncEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: magSafeSyncKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: magSafeSyncKey)
+        defaults.synchronize()
         if !enabled {
             _ = SMCComm.setMagSafeColor(.system)
         }
@@ -236,18 +239,45 @@ class PowerMonitor {
         self.disableSleepDuringCharge = disableDuringCharge
         self.disableSleepDuringDischarge = disableDuringDischarge
         self.disableSleepAggressive = aggressive
-        UserDefaults.standard.set(disableDuringCharge, forKey: sleepDuringChargeKey)
-        UserDefaults.standard.set(disableDuringDischarge, forKey: sleepDuringDischargeKey)
-        UserDefaults.standard.set(aggressive, forKey: sleepAggressiveKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(disableDuringCharge, forKey: sleepDuringChargeKey)
+        defaults.set(disableDuringDischarge, forKey: sleepDuringDischargeKey)
+        defaults.set(aggressive, forKey: sleepAggressiveKey)
+        defaults.synchronize()
         checkBatteryState()
     }
 
     func setPowerUserMode(_ enabled: Bool) {
         powerUserModeEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: powerUserModeKey)
-        UserDefaults.standard.synchronize()
+        defaults.set(enabled, forKey: powerUserModeKey)
+        defaults.synchronize()
         checkBatteryState()
+    }
+
+    func disablePowerAdapter() {
+        setAdapterDisabledManual(true)
+    }
+
+    func enablePowerAdapter() {
+        setAdapterDisabledManual(false)
+        chargingToFull = false
+    }
+
+    func chargeToFullAction() {
+        chargingToFull = true
+        setAdapterDisabledManual(false)
+        setChargingDisabledManual(false)
+        checkBatteryState()
+    }
+
+    func chargeToLimitAction() {
+        chargingToFull = false
+        setAdapterDisabledManual(false)
+        setChargingDisabledManual(false)
+        checkBatteryState()
+    }
+
+    func disableChargingOnly() {
+        setChargingDisabledManual(true)
     }
     
     private func updateSleepAssertion(isCharging: Bool, isDischarging: Bool) {
@@ -294,7 +324,7 @@ class PowerMonitor {
         // 1. Heat Protection (Highest Priority)
         if heatProtectionEnabled, let currentTemp = SMCComm.readTemperature("B0Te") {
             if currentTemp >= heatThreshold {
-                monitorLogger.warning("Heat protection active (\(currentTemp)°C). Disabling charging.")
+                DaemonLogger.shared.log("Heat protection active (\(currentTemp)°C). Disabling charging.")
                 isHeatProtectionTriggered = true
                 _ = SMCComm.writeKey("CH0C", value: [0x01])
                 _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
@@ -307,7 +337,7 @@ class PowerMonitor {
 
         // 2. Charge to Full
         if chargingToFull {
-            monitorLogger.info("Charge to full active.")
+            DaemonLogger.shared.log("Charge to full active.")
             _ = SMCComm.writeKey("CH0C", value: [0x00])
             _ = SMCComm.writeKey("CHTE", value: [0x00, 0x00, 0x00, 0x00])
             _ = SMCComm.writeKey("CHIE", value: [0x00])
@@ -319,7 +349,7 @@ class PowerMonitor {
 
         // 3. Manual Overrides
         if adapterDisabledManual {
-            monitorLogger.info("Manual adapter disable active.")
+            DaemonLogger.shared.log("Manual adapter disable active.")
             _ = SMCComm.writeKey("CH0C", value: [0x01])
             _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
             _ = SMCComm.writeKey("CHIE", value: [0x08])
@@ -330,7 +360,7 @@ class PowerMonitor {
         }
 
         if chargingDisabledManual {
-            monitorLogger.info("Manual charging disable active.")
+            DaemonLogger.shared.log("Manual charging disable active.")
             _ = SMCComm.writeKey("CH0C", value: [0x01])
             _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
             _ = SMCComm.writeKey("CHIE", value: [0x00])
@@ -350,8 +380,6 @@ class PowerMonitor {
                    let cap = desc[kIOPSCurrentCapacityKey] as? Int,
                    let isCharging = desc[kIOPSIsChargingKey] as? Bool {
                     
-                    monitorLogger.debug("Capacity: \(cap)%, Charging: \(isCharging)")
-                    
                     // Enforce Start/Max Limits
                     let wasChargingEnabled = isChargingEnabledState
                     if cap >= maxLimit {
@@ -363,44 +391,49 @@ class PowerMonitor {
                     if !isChargingEnabledState {
                         // Check if macOS overrode our setting
                         if let currentCH0C = SMCComm.readKey("CH0C"), currentCH0C.first == 0x00 {
-                            monitorLogger.warning("macOS override detected! CH0C was 00 (enabled), forcing back to 01 (inhibited).")
-                        } else {
-                            monitorLogger.info("Inhibiting charge.")
+                            DaemonLogger.shared.log("macOS override detected! CH0C was 00 (enabled), forcing back to 01 (inhibited).")
                         }
 
                         _ = SMCComm.writeKey("CH0C", value: [0x01])
                         _ = SMCComm.writeKey("CHTE", value: [0x01, 0x00, 0x00, 0x00])
-                        
+
                         var isDischarging = false
                         if floatingModeEnabled || (autoDischargeEnabled && cap > maxLimit) {
-                            monitorLogger.info("Floating or Auto-discharge active. Isolating adapter.")
-                            _ = SMCComm.writeKey("CHIE", value: [0x08])
+                            DaemonLogger.shared.log("Control: Inhibiting + Isolating (\(cap)% >= \(maxLimit)% limit).")
+                            // On many M-series Macs, CHIE=0x01 or 0x02 is used for isolation
+                            _ = SMCComm.writeKey("CHIE", value: [0x01]) 
                             _ = SMCComm.writeKey("CH0J", value: [0x20])
+                            
+                            // Also try setting the limit to 0 to encourage discharge
+                            _ = SMCComm.writeKey("BCLM", value: [0x00]) 
                             isDischarging = true
                         } else {
+                            DaemonLogger.shared.log("Control: Inhibiting (\(cap)% >= \(maxLimit)% limit).")
                             _ = SMCComm.writeKey("CHIE", value: [0x00])
                             _ = SMCComm.writeKey("CH0J", value: [0x00])
+                            _ = SMCComm.writeKey("BCLM", value: [UInt8(maxLimit)])
                         }
                         
                         updateMagSafeLED(chargingDisabled: true, isManualDischarge: isDischarging)
                         updateSleepAssertion(isCharging: false, isDischarging: isDischarging)
                     } else {
-                        monitorLogger.info("Allowing charge.")
+                        DaemonLogger.shared.log("Control: Allowing charge (\(cap)% < \(startLimit)% start target).")
                         _ = SMCComm.writeKey("CH0C", value: [0x00])
                         _ = SMCComm.writeKey("CHTE", value: [0x00, 0x00, 0x00, 0x00])
                         _ = SMCComm.writeKey("CHIE", value: [0x00])
                         _ = SMCComm.writeKey("CH0J", value: [0x00])
                         
                         // Cycle adapter on transition from inhibited → allowed
-                        // macOS won't re-engage charging without a physical adapter power cycle
                         if !wasChargingEnabled {
-                            monitorLogger.info("State transition: inhibit → allow. Cycling adapter.")
+                            DaemonLogger.shared.log("State transition: inhibit → allow. Cycling adapter.")
                             SMCComm.cycleAdapter()
                         }
                         
                         updateMagSafeLED(chargingDisabled: false, isManualDischarge: false)
                         updateSleepAssertion(isCharging: true, isDischarging: false)
                     }
+                } else {
+                    DaemonLogger.shared.log("Warning: Could not parse power source description.")
                 }
             }
         }

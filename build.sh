@@ -33,7 +33,7 @@ swiftc -o "$MACOS_DIR/cc" \
 # Build App
 echo "Compiling App..."
 swiftc -o "$MACOS_DIR/ChargeControl" \
-    App/AppDelegate.swift App/BatteryState.swift App/SettingsView.swift App/Components.swift App/AppIntents.swift Shared/ChargeControlCommProtocol.swift \
+    App/AppDelegate.swift App/BatteryState.swift App/SettingsView.swift App/EnergyUsageView.swift App/Components.swift App/AppIntents.swift Shared/ChargeControlCommProtocol.swift \
     -framework AppKit -framework SwiftUI -framework ServiceManagement -framework Charts -framework AppIntents
 
 # Copy Resources

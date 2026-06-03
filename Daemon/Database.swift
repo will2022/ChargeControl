@@ -56,6 +56,14 @@ class Database {
         }
         sqlite3_finalize(pruneStatement)
         
+        // 3. Delete energy history older than 7 days (it grows fast)
+        let pruneEnergyString = "DELETE FROM ProcessEnergyHistory WHERE timestamp < datetime('now', '-7 days');"
+        var pruneEnergyStatement: OpaquePointer?
+        if sqlite3_prepare_v2(db, pruneEnergyString, -1, &pruneEnergyStatement, nil) == SQLITE_OK {
+            sqlite3_step(pruneEnergyStatement)
+        }
+        sqlite3_finalize(pruneEnergyStatement)
+        
         // Optional: Vacuum to reclaim space
         sqlite3_exec(db, "VACUUM;", nil, nil, nil)
     }
@@ -84,6 +92,15 @@ class Database {
         );
         """
         
+        let createEnergyHistoryTable = """
+        CREATE TABLE IF NOT EXISTS ProcessEnergyHistory(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            process_name TEXT,
+            energy_impact REAL
+        );
+        """
+        
         var statement: OpaquePointer?
         if sqlite3_prepare_v2(db, createHistoryTable, -1, &statement, nil) == SQLITE_OK {
             sqlite3_step(statement)
@@ -91,6 +108,11 @@ class Database {
         sqlite3_finalize(statement)
         
         if sqlite3_prepare_v2(db, createStatsTable, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_step(statement)
+        }
+        sqlite3_finalize(statement)
+        
+        if sqlite3_prepare_v2(db, createEnergyHistoryTable, -1, &statement, nil) == SQLITE_OK {
             sqlite3_step(statement)
         }
         sqlite3_finalize(statement)
@@ -147,5 +169,65 @@ class Database {
         }
         sqlite3_finalize(queryStatement)
         return results
+    }
+    
+    func logEnergyUsage(consumers: [[String: Any]]) {
+        let insertStatementString = "INSERT INTO ProcessEnergyHistory (process_name, energy_impact) VALUES (?, ?);"
+        var insertStatement: OpaquePointer?
+        
+        if sqlite3_prepare_v2(db, insertStatementString, -1, &insertStatement, nil) == SQLITE_OK {
+            for consumer in consumers {
+                guard let name = consumer["name"] as? String,
+                      let impact = consumer["energy_impact"] as? Double else { continue }
+                
+                sqlite3_bind_text(insertStatement, 1, (name as NSString).utf8String, -1, nil)
+                sqlite3_bind_double(insertStatement, 2, impact)
+                
+                if sqlite3_step(insertStatement) != SQLITE_DONE {
+                    dbLogger.error("Could not insert energy history row.")
+                }
+                sqlite3_reset(insertStatement)
+            }
+        }
+        sqlite3_finalize(insertStatement)
+    }
+    
+    func getHistoricalEnergyImpact(limit: Int = 20) -> [String: Any] {
+        // Calculate average energy impact per process name over the stored window
+        let queryStatementString = """
+        SELECT process_name, AVG(energy_impact) as avg_impact, MAX(timestamp) as last_seen
+        FROM ProcessEnergyHistory 
+        WHERE timestamp > datetime('now', '-24 hours')
+        GROUP BY process_name 
+        ORDER BY avg_impact DESC 
+        LIMIT ?;
+        """
+        
+        var queryStatement: OpaquePointer?
+        var consumers = [[String: Any]]()
+        
+        if sqlite3_prepare_v2(db, queryStatementString, -1, &queryStatement, nil) == SQLITE_OK {
+            sqlite3_bind_int(queryStatement, 1, Int32(limit))
+            
+            while sqlite3_step(queryStatement) == SQLITE_ROW {
+                if let namePtr = sqlite3_column_text(queryStatement, 0) {
+                    let name = String(cString: namePtr)
+                    let avgImpact = sqlite3_column_double(queryStatement, 1)
+                    
+                    consumers.append([
+                        "name": name,
+                        "pid": 0, // In historical view, PID is less relevant as it changes
+                        "energy_impact": avgImpact
+                    ])
+                }
+            }
+        }
+        sqlite3_finalize(queryStatement)
+        
+        return [
+            "consumers": consumers,
+            "lastUpdate": Date(),
+            "error": NSNull()
+        ]
     }
 }
