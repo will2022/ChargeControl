@@ -33,7 +33,7 @@ Unlike standard macOS battery management, ChargeControl gives you direct control
 - **Sleep & Clamshell Management:** Stay awake during critical charging or discharging tasks, ensuring limits are respected in Clamshell Mode.
 - **MagSafe LED Sync:** Automatically changes the MagSafe connector color based on charging state (Orange = Charging, Green = Limit Reached, Off = Discharging).
 - **Historical Charts:** View 60-second telemetry data (Battery Level, Power Flow) in the **History** tab (Requires Power User Mode).
-- **Automation CLI:** Control and monitor everything from the terminal using the included `cc` tool.
+- **Automation CLI:** Control and monitor everything from the terminal using the included `chargectl` tool.
 - **Power User Analytics:** Detailed hardware telemetry including Voltage, Amperage, Cycle Count, and multiple thermal sensors.
 
 ---
@@ -102,12 +102,12 @@ You may see a system notification that "ChargeControl" has added a background it
 
 ## ⌨️ Installing the CLI (Optional)
 
-The `cc` command-line tool allows you to control the app from the terminal. 
+The `chargectl` command-line tool allows you to control the app from the terminal. 
 - If you installed via **Homebrew** or the **One-Liner**, the CLI is already installed!
 - If you installed via the **DMG** or built from source, you can symlink it manually:
 
 ```bash
-sudo ln -s /Applications/ChargeControl.app/Contents/MacOS/cc /usr/local/bin/cc
+sudo ln -s /Applications/ChargeControl.app/Contents/MacOS/chargectl /usr/local/bin/chargectl
 ```
 
 ---
@@ -124,16 +124,16 @@ sudo ln -s /Applications/ChargeControl.app/Contents/MacOS/cc /usr/local/bin/cc
 
 ## 💻 CLI Usage
 
-The `cc` tool allows for powerful automation and scripting:
+The `chargectl` tool allows for powerful automation and scripting:
 
 ```bash
-cc status      # Show current battery and daemon status
-cc pause       # Manually pause charging
-cc resume      # Revert to automatic charging limits (enforce Start/Max)
-cc force       # Force battery power (virtual adapter disconnect)
-cc unforce     # Re-enable power adapter
-cc topup       # Start Top Up to 100%
-cc limit 80    # Set the Max Charge Limit to 80%
+chargectl status      # Show current battery and daemon status
+chargectl pause       # Manually pause charging
+chargectl resume      # Revert to automatic charging limits (enforce Start/Max)
+chargectl force       # Force battery power (virtual adapter disconnect)
+chargectl unforce     # Re-enable power adapter
+chargectl topup       # Start Top Up to 100%
+chargectl limit 80    # Set the Max Charge Limit to 80%
 ```
 
 ---
@@ -223,7 +223,7 @@ ChargeControl writes directly to the SMC charging control keys to enforce limits
 
 ### 🖥️ System Integration
 - [x] **MagSafe LED Synchronization:** Reflect software state on the MagSafe connector light.
-- [x] **Automation & Scripting:** Standalone `cc` CLI tool for terminal control.
+- [x] **Automation & Scripting:** Standalone `chargectl` CLI tool for terminal control.
 
 ### 📊 Analytics & Insights
 - [x] **Power Flow Dashboard:** Real-time visualization of energy distribution between the power adapter, the battery, and the system components.

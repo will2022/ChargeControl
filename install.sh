@@ -39,10 +39,15 @@ hdiutil detach "$MOUNT_POINT"
 rm /tmp/ChargeControl.dmg
 
 # 6. Optional: Link CLI
-echo "Step 6: Setting up 'cc' command..."
-if [ ! -L /usr/local/bin/cc ]; then
-    sudo ln -s "$APP_DEST/Contents/MacOS/cc" /usr/local/bin/cc
-    echo "✅ 'cc' command linked to /usr/local/bin/cc"
+echo "Step 6: Setting up 'chargectl' command..."
+# Remove legacy 'cc' link from older installs (it shadowed the system C compiler)
+if [ -L /usr/local/bin/cc ] && [ "$(readlink /usr/local/bin/cc)" = "$APP_DEST/Contents/MacOS/cc" ]; then
+    sudo rm /usr/local/bin/cc
+    echo "🧹 Removed legacy 'cc' symlink"
+fi
+if [ ! -L /usr/local/bin/chargectl ]; then
+    sudo ln -s "$APP_DEST/Contents/MacOS/chargectl" /usr/local/bin/chargectl
+    echo "✅ 'chargectl' command linked to /usr/local/bin/chargectl"
 fi
 
 echo "🎉 Finished! You can now open ChargeControl from your Applications folder."

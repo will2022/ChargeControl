@@ -26,7 +26,7 @@ swiftc -o "$MACOS_DIR/ChargeControlDaemon" \
 
 # Build CLI
 echo "Compiling CLI..."
-swiftc -o "$MACOS_DIR/cc" \
+swiftc -o "$MACOS_DIR/chargectl" \
     CLI/*.swift Shared/*.swift \
     -framework Foundation
 
@@ -77,7 +77,7 @@ PLIST
 
 echo "Signing binaries..."
 codesign -s - --force --deep "$MACOS_DIR/ChargeControlDaemon"
-codesign -s - --force --deep "$MACOS_DIR/cc"
+codesign -s - --force --deep "$MACOS_DIR/chargectl"
 codesign -s - --force --deep "$APP_DIR"
 
 echo "Build complete at $APP_DIR"

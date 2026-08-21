@@ -18,7 +18,7 @@ func printUsage() {
     print("""
     ChargeControl CLI v1.0.0
     
-    Usage: cc <command> [options]
+    Usage: chargectl <command> [options]
     
     Commands:
       status        Show current battery and daemon status
