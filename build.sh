@@ -58,9 +58,9 @@ cat << 'PLIST' > "$CONTENTS_DIR/Info.plist"
     <key>CFBundleName</key>
     <string>ChargeControl</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.0</string>
+    <string>1.2.0</string>
     <key>CFBundleVersion</key>
-    <string>5</string>
+    <string>6</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundlePackageType</key>
