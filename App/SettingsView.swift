@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var sleepDuringDischarge: Bool = true
     @State private var sleepAggressive: Bool = false
     @State private var powerUserMode: Bool = false
+    @State private var launchAtLogin: Bool = UserDefaults.standard.object(forKey: "LaunchAtLogin") as? Bool ?? true
     
     private var hasChanges: Bool {
         return chargeLimit != Double(battery.maxLimit) ||
@@ -198,6 +199,19 @@ struct SettingsView: View {
                 
                 Divider()
                 
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Toggle("Launch at Login", isOn: $launchAtLogin)
+                            .onChange(of: launchAtLogin) {
+                                appDelegate.setLoginItem(launchAtLogin)
+                            }
+                        Spacer()
+                        InfoButton(title: "Launch at Login", text: "Automatically start ChargeControl when you log in, so your charge limits are always enforced and visible in the menu bar.")
+                    }
+                }
+
+                Divider()
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Notifications").font(.subheadline).foregroundColor(.secondary)
                     VStack(alignment: .leading) {

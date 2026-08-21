@@ -157,6 +157,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func registerLoginItem() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "LaunchAtLogin") == nil {
+            defaults.set(true, forKey: "LaunchAtLogin")
+        }
+        guard defaults.bool(forKey: "LaunchAtLogin") else { return }
+
         guard SMAppService.mainApp.status != .enabled else { return }
         do {
             try SMAppService.mainApp.register()
@@ -165,6 +171,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             appLogger.error("Failed to register login item: \(error.localizedDescription)")
             logToFile("Failed to register login item: \(error.localizedDescription)")
+        }
+    }
+
+    func setLoginItem(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: "LaunchAtLogin")
+        do {
+            switch (enabled, SMAppService.mainApp.status) {
+            case (true, .enabled):
+                break
+            case (true, _):
+                try SMAppService.mainApp.register()
+            case (false, .enabled):
+                try SMAppService.mainApp.unregister()
+            case (false, _):
+                break
+            }
+            appLogger.info("Login item \(enabled ? "enabled" : "disabled")")
+            logToFile("Login item \(enabled ? "enabled" : "disabled")")
+        } catch {
+            appLogger.error("Failed to update login item: \(error.localizedDescription)")
+            logToFile("Failed to update login item: \(error.localizedDescription)")
         }
     }
 
