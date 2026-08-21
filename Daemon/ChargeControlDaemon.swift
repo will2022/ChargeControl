@@ -90,6 +90,9 @@ public class ChargeControlDaemon: NSObject, ChargeControlDaemonProtocol {
         if let amp = bt.amperage, let volt = state["voltage"] as? Double {
              state["batteryPowerWatts"] = (Double(amp) * volt) / 1000.0
         }
+        if let current = bt.appleRawCurrentCapacity, let max = bt.appleRawMaxCapacity, max > 0 {
+            state["percentage"] = Int((Double(current) / Double(max) * 100.0).rounded())
+        }
         
         reply(state)
     }
