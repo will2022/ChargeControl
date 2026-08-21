@@ -118,6 +118,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appLogger.info("ChargeControl: applicationDidFinishLaunching called")
         logToFile("Application did finish launching")
         registerDaemon()
+        registerLoginItem()
     }
     
     func showSettings(battery: BatteryState) {
@@ -152,6 +153,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             appLogger.error("Failed to register daemon: \(error.localizedDescription)")
             logToFile("Failed to register daemon: \(error.localizedDescription)")
+        }
+    }
+
+    func registerLoginItem() {
+        guard SMAppService.mainApp.status != .enabled else { return }
+        do {
+            try SMAppService.mainApp.register()
+            appLogger.info("Successfully registered login item")
+            logToFile("Successfully registered login item")
+        } catch {
+            appLogger.error("Failed to register login item: \(error.localizedDescription)")
+            logToFile("Failed to register login item: \(error.localizedDescription)")
         }
     }
 
