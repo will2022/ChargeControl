@@ -51,7 +51,34 @@ class PowerMonitor {
 
     private let defaults = UserDefaults(suiteName: "com.chargecontrol.daemon") ?? .standard
     
+    /// Copies settings from the pre-1.1 suite ("com.chargecontrol.app") if the
+    /// current domain is empty, so upgrading users keep their configuration.
+    private static func migrateLegacySettings(into defaults: UserDefaults) {
+        guard defaults.object(forKey: "maxLimit") == nil else { return }
+        // The launchd plist associates this daemon with "com.chargecontrol.app",
+        // which makes UserDefaults(suiteName:) reject that suite — read the
+        // legacy plist file directly instead.
+        let legacyPath = "/var/root/Library/Preferences/com.chargecontrol.app.plist"
+        guard let legacy = NSDictionary(contentsOfFile: legacyPath) as? [String: Any] else {
+            DaemonLogger.shared.log("Migration: no legacy settings found at \(legacyPath)")
+            return
+        }
+        let keys = ["maxLimit", "startLimit", "floatingMode", "audioWarningEnabled", "audioSoundName", "chargingDisabledManual", "adapterDisabledManual", "autoDischarge", "heatProtection", "heatThreshold", "magSafeSync", "sleepDuringCharge", "sleepDuringDischarge", "sleepAggressive", "powerUserMode"]
+        var migratedCount = 0
+        for key in keys {
+            if let value = legacy[key] {
+                defaults.set(value, forKey: key)
+                migratedCount += 1
+            }
+        }
+        if migratedCount > 0 {
+            defaults.synchronize()
+            DaemonLogger.shared.log("Migration: copied \(migratedCount) settings from legacy domain")
+        }
+    }
+    
     private init() {
+        PowerMonitor.migrateLegacySettings(into: defaults)
         self.maxLimit = defaults.integer(forKey: maxLimitKey) > 0 ? defaults.integer(forKey: maxLimitKey) : 80
         self.startLimit = defaults.integer(forKey: startLimitKey) > 0 ? defaults.integer(forKey: startLimitKey) : 75
         self.floatingModeEnabled = defaults.object(forKey: floatingModeKey) != nil ? defaults.bool(forKey: floatingModeKey) : false
